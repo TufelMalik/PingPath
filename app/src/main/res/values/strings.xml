@@ -1,0 +1,41 @@
+<resources>
+    <string name="app_name">PingPath</string>
+    <string name="new_alert">New Alert</string>
+
+    <!-- Step 1: Destination -->
+    <string name="step1_title">Where are you\ngoing?</string>
+    <string name="step1_subtitle">Search and select your destination</string>
+    <string name="destination">Destination</string>
+    <string name="search_destination_hint">Search destination...</string>
+
+    <!-- Step 2: Alarm Location -->
+    <string name="step2_title">Now, where should the\nalarm fire?</string>
+    <string name="step2_subtitle">Pick the location where your alarm triggers</string>
+    <string name="alarm_location">Alarm Location</string>
+    <string name="search_alarm_hint">Where should alarm trigger?</string>
+    <string name="alarm_helper_text">This is usually a stop or two before your final destination</string>
+    <string name="change_button">CHANGE</string>
+
+    <!-- Step 3: Time Selection -->
+    <string name="step3_title">How early should we alert you?</string>
+    <string name="step3_subtitle">Set how many minutes before arrival</string>
+    <string name="alert_me_before">Alert Me Before</string>
+    <string name="how_calculated">How is this calculated?</string>
+    <string name="select_time_hint">Select time before arrival...</string>
+    <string name="custom_time">Custom...</string>
+
+    <!-- Step 4: Review -->
+    <string name="step4_title">Almost done!\nReview &amp; save.</string>
+    <string name="step4_subtitle">Tap save to start monitoring</string>
+    <string name="arrival">Arrival</string>
+    <string name="time">Time</string>
+    <string name="eta_helper">~8 min ETA at current speed</string>
+    <string name="alert_summary">Alert Summary</string>
+    <string name="alarm_fires_here">alarm fires here</string>
+    <string name="sound_vibration_status">🔊 Sound · \uD83D\uDCF3 Vibration</string>
+    <string name="sound">Sound</string>
+    <string name="vibration">Vibration</string>
+    <string name="snooze">Snooze</string>
+    <string name="save_alert">Save Alert</string>
+    <string name="background_run_info">Runs in background even when app is closed</string>
+</resources>
