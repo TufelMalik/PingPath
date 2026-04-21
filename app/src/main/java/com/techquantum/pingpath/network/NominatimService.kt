@@ -13,4 +13,11 @@ interface NominatimService {
         @Query("addressdetails") addressDetails: Int = 1,
         @Query("countrycodes") countryCodes: String = "in"
     ): List<NominatimResponse>
+
+    @GET("reverse")
+    suspend fun reverseGeocode(
+        @Query("lat") lat: Double,
+        @Query("lon") lon: Double,
+        @Query("format") format: String = "json"
+    ): NominatimResponse
 }

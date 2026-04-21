@@ -31,11 +31,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -57,16 +57,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.flow.Flow
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.techquantum.pingpath.repository.AlertRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import javax.inject.Inject
 
 // ==========================================
 // 1. STRINGS (Simulating strings.xml)
@@ -114,67 +115,6 @@ data class AlertDomainModel(
     val configSummary: String
 )
 
-interface AlertRepository {
-    fun getActiveAlerts(): Flow<List<AlertDomainModel>>
-}
-
-class GetActiveAlertsUseCase(private val repository: AlertRepository) {
-    operator fun invoke(): Flow<List<AlertDomainModel>> = repository.getActiveAlerts()
-}
-
-class CancelAlertUseCase(private val repository: AlertRepository) {
-    operator fun invoke(alertId: String) {
-        InMemoryAlertsDatabase.removeAlert(alertId)
-    }
-}
-
-// ==========================================
-// 4. CLEAN ARCHITECTURE: DATA LAYER
-// ==========================================
-data class AlertEntity(
-    val id: String,
-    val triggerType: String,
-    val destination: String,
-    val contextText: String,
-    val distanceRemaining: String,
-    val eta: String,
-    val progressPercent: Float,
-    val configSummary: String
-)
-
-// Mapper: Entity -> Domain
-fun AlertEntity.toDomain() = AlertDomainModel(
-    id = id,
-    triggerType = triggerType,
-    destination = destination,
-    contextText = contextText,
-    distanceRemaining = distanceRemaining,
-    eta = eta,
-    progressPercent = progressPercent,
-    configSummary = configSummary
-)
-
-// In-Memory Database for MVP
-object InMemoryAlertsDatabase {
-    private val _alerts = MutableStateFlow<List<AlertEntity>>(emptyList())
-    val alerts: StateFlow<List<AlertEntity>> = _alerts.asStateFlow()
-
-    fun addAlert(alert: AlertEntity) {
-        _alerts.update { it + alert }
-    }
-
-    fun removeAlert(id: String) {
-        _alerts.update { current -> current.filter { it.id != id } }
-    }
-}
-
-// Repository Implementation (Strictly the ONLY source of data)
-class AlertRepositoryImpl : AlertRepository {
-    override fun getActiveAlerts(): Flow<List<AlertDomainModel>> = InMemoryAlertsDatabase.alerts.map { list ->
-        list.map { it.toDomain() }
-    }
-}
-
 // ==========================================
 // 5. PRESENTATION LAYER: VIEWMODEL & UI STATE
 // ==========================================
@@ -189,9 +129,9 @@ sealed class ProximAlertEvent {
     object AddFabClicked : ProximAlertEvent()
 }
 
-class ProximAlertViewModel(
-    private val getActiveAlertsUseCase: GetActiveAlertsUseCase = GetActiveAlertsUseCase(AlertRepositoryImpl()),
-    private val cancelAlertUseCase: CancelAlertUseCase = CancelAlertUseCase(AlertRepositoryImpl())
+@HiltViewModel
+class ProximAlertViewModel @Inject constructor(
+    private val repository: AlertRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProximAlertUiState())
@@ -203,11 +143,12 @@ class ProximAlertViewModel(
 
     private fun loadAlerts() {
         viewModelScope.launch {
-            getActiveAlertsUseCase().collect { alerts ->
+            repository.getActiveAlerts().collect { alerts ->
+                val domainAlerts = alerts.map { it.toDomain() }
                 _uiState.update { 
                     it.copy(
-                        alerts = alerts, 
-                        activeCount = alerts.size,
+                        alerts = domainAlerts, 
+                        activeCount = domainAlerts.size,
                         isLoading = false
                     ) 
                 }
@@ -218,8 +159,9 @@ class ProximAlertViewModel(
     fun onEvent(event: ProximAlertEvent) {
         when (event) {
             is ProximAlertEvent.CancelClicked -> {
-                cancelAlertUseCase(event.alertId)
-                // In a real app, reload alerts or update state to remove the cancelled alert
+                viewModelScope.launch {
+                    repository.updateAlertStatus(event.alertId, "CANCELLED")
+                }
             }
             is ProximAlertEvent.AddFabClicked -> {
                 // Navigate to Add Alert screen
@@ -227,6 +169,18 @@ class ProximAlertViewModel(
         }
     }
 }
+
+// Mapper: Local Entity -> Domain Model
+fun com.techquantum.pingpath.data.local.entities.AlertEntity.toDomain() = AlertDomainModel(
+    id = id,
+    triggerType = "ON ENTRY",
+    destination = destinationName,
+    contextText = "Alarm at $alarmLocationName",
+    distanceRemaining = "N/A",
+    eta = "N/A",
+    progressPercent = 0.0f,
+    configSummary = "Sound"
+)
 
 
 // ==========================================
@@ -237,7 +191,7 @@ class ProximAlertViewModel(
 
 @Composable
 fun HomeScreen(
-    viewModel: ProximAlertViewModel = ProximAlertViewModel(),
+    viewModel: ProximAlertViewModel = hiltViewModel(),
     onAlertClick: (String) -> Unit = {},
     onAddClick: () -> Unit = {}
 ) {
@@ -481,7 +435,7 @@ private fun AlertCard(alert: AlertDomainModel, onCancel: () -> Unit, onClick: ()
                     horizontalArrangement = Arrangement.spacedBy(3.dp) // HTML gap-1 (4px) -> 3.dp
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.VolumeUp,
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = "Sound Config",
                         tint = AppColors.TextMuted,
                         modifier = Modifier.size(9.dp) // HTML text-[12px] -> 9.dp

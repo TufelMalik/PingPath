@@ -33,11 +33,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
+import com.techquantum.pingpath.repository.AlertRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 
 /**
  * ==========================================
@@ -157,66 +161,7 @@ data class AlertDetail(
     val settingsOptions: List<SettingsOption>
 )
 
-interface GetAlertDetailsUseCase {
-    suspend operator fun invoke(): AlertDetail
-}
-
-class GetAlertDetailsUseCaseImpl(private val repository: AlertRepository) : GetAlertDetailsUseCase {
-    override suspend fun invoke(): AlertDetail = repository.getAlertDetails()
-}
-
-/**
- * ==========================================
- * 3. DATA LAYER (Repository)
- * ==========================================
- * All static data is strictly provided by the repository.
- */
-interface AlertRepository {
-    suspend fun getAlertDetails(): AlertDetail
-}
-
-class AlertRepositoryImpl : AlertRepository {
-    override suspend fun getAlertDetails(): AlertDetail {
-        // Simulating network/DB delay
-        delay(300)
-
-        return AlertDetail(
-            isLiveTracking = true,
-            startNode = TimelineNodeData(
-                title = AppStrings.timelineYourLocation,
-                subtitle = "Near Borivali, Mumbai"
-            ),
-            alarmNode = TimelineNodeData(
-                title = AppStrings.timelineAlarmTriggers,
-                subtitle = "Dadar Railway Station",
-                distanceAway = 4.2
-            ),
-            endNode = TimelineNodeData(
-                title = AppStrings.timelineFinalDestination,
-                subtitle = "Mumbai Central Railway Station",
-                distanceAway = 6.8
-            ),
-            routeData = RouteData(
-                startLocationName = "Borivali",
-                alarmLocationName = "Dadar",
-                endLocationName = "Mumbai Central",
-                distanceToAlarm = 4.2,
-                distanceToDestination = 6.8,
-                progressPercentage = 0.55f
-            ),
-            etaData = EtaData(
-                estimatedMinutes = 8,
-                statusText = AppStrings.labelOnTime,
-                descriptionText = "Alert fires 10 min before arrival"
-            ),
-            settingsOptions = listOf(
-                SettingsOption("sound", Icons.Default.MusicNote, "Default Sound"),
-                SettingsOption("vibrate", Icons.Default.Vibration, "Pulse Vibrate"),
-                SettingsOption("snooze", Icons.Default.Snooze, "Snooze 5m")
-            )
-        )
-    }
-}
+// Redundant interfaces/classes removed
 
 /**
  * ==========================================
@@ -227,6 +172,7 @@ sealed class AlertUiState {
     object Loading : AlertUiState()
     data class Success(val data: AlertDetail) : AlertUiState()
     data class Error(val message: String) : AlertUiState()
+    object Cancelled : AlertUiState()
 }
 
 sealed class AlertUiEvent {
@@ -236,10 +182,13 @@ sealed class AlertUiEvent {
     data class OnSettingOptionClicked(val optionId: String) : AlertUiEvent()
 }
 
-class AlertViewModel(
-    private val getAlertDetailsUseCase: GetAlertDetailsUseCase
+@HiltViewModel
+class AlertViewModel @Inject constructor(
+    private val repository: AlertRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
+    private val alertId: String = checkNotNull(savedStateHandle["alertId"])
     private val _uiState = MutableStateFlow<AlertUiState>(AlertUiState.Loading)
     val uiState: StateFlow<AlertUiState> = _uiState.asStateFlow()
 
@@ -251,8 +200,13 @@ class AlertViewModel(
         viewModelScope.launch {
             _uiState.value = AlertUiState.Loading
             try {
-                val data = getAlertDetailsUseCase()
-                _uiState.value = AlertUiState.Success(data)
+                val alert = repository.getAlertById(alertId)
+                if (alert != null) {
+                    val detail = alert.toDetail()
+                    _uiState.value = AlertUiState.Success(detail)
+                } else {
+                    _uiState.value = AlertUiState.Error("Alert not found")
+                }
             } catch (e: Exception) {
                 _uiState.value = AlertUiState.Error("Failed to load data")
             }
@@ -261,20 +215,64 @@ class AlertViewModel(
 
     fun onEvent(event: AlertUiEvent) {
         when (event) {
-            is AlertUiEvent.OnBackClicked -> { /* Handle Back */
+            is AlertUiEvent.OnBackClicked -> { /* Handle Back */ }
+            is AlertUiEvent.OnMoreClicked -> { /* Handle More */ }
+            is AlertUiEvent.OnCancelAlarmClicked -> {
+                viewModelScope.launch {
+                    repository.updateAlertStatus(alertId, "CANCELLED")
+                    // Stop the service
+                    val intent = android.content.Intent(
+                        com.techquantum.pingpath.PingPathApp.instance, 
+                        com.techquantum.pingpath.service.AlertForegroundService::class.java
+                    ).apply {
+                        action = com.techquantum.pingpath.service.AlertForegroundService.ACTION_STOP
+                    }
+                    com.techquantum.pingpath.PingPathApp.instance.startService(intent)
+                    
+                    _uiState.value = AlertUiState.Cancelled
+                }
             }
-
-            is AlertUiEvent.OnMoreClicked -> { /* Handle More */
-            }
-
-            is AlertUiEvent.OnCancelAlarmClicked -> { /* Handle Cancel */
-            }
-
-            is AlertUiEvent.OnSettingOptionClicked -> { /* Handle Setting click */
-            }
+            is AlertUiEvent.OnSettingOptionClicked -> { /* Handle Setting click */ }
         }
     }
 }
+
+// Mapper: Local Entity -> Detail Model
+fun com.techquantum.pingpath.data.local.entities.AlertEntity.toDetail() = AlertDetail(
+    isLiveTracking = status == "ACTIVE",
+    startNode = TimelineNodeData(
+        title = AppStrings.timelineYourLocation,
+        subtitle = "Current Location"
+    ),
+    alarmNode = TimelineNodeData(
+        title = AppStrings.timelineAlarmTriggers,
+        subtitle = alarmLocationName,
+        distanceAway = 0.0 // Needs real calculation
+    ),
+    endNode = TimelineNodeData(
+        title = AppStrings.timelineFinalDestination,
+        subtitle = destinationName,
+        distanceAway = 0.0 // Needs real calculation
+    ),
+    routeData = RouteData(
+        startLocationName = "Current",
+        alarmLocationName = alarmLocationName,
+        endLocationName = destinationName,
+        distanceToAlarm = 0.0,
+        distanceToDestination = 0.0,
+        progressPercentage = 0.0f
+    ),
+    etaData = EtaData(
+        estimatedMinutes = 0,
+        statusText = AppStrings.labelOnTime,
+        descriptionText = "Alert triggers at target"
+    ),
+    settingsOptions = listOf(
+        SettingsOption("sound", Icons.Default.MusicNote, alarmSound),
+        SettingsOption("vibrate", Icons.Default.Vibration, "Vibrate"),
+        SettingsOption("snooze", Icons.Default.Snooze, "Snooze")
+    )
+)
 
 /**
  * ==========================================
@@ -284,7 +282,7 @@ class AlertViewModel(
 
 @Composable
 fun AlertDetailsScreen(
-    viewModel: AlertViewModel,
+    viewModel: AlertViewModel = hiltViewModel(),
     onBack: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -326,6 +324,11 @@ fun AlertDetailsScreen(
                             data = state.data,
                             onEvent = viewModel::onEvent
                         )
+                    }
+                    is AlertUiState.Cancelled -> {
+                        LaunchedEffect(Unit) {
+                            onBack()
+                        }
                     }
                 }
             }
@@ -1013,9 +1016,10 @@ fun CancelButtonSection(onEvent: (AlertUiEvent) -> Unit) {
 @Preview
 @Composable
 fun AlertDetailsScreenPreview() {
-    val repository = AlertRepositoryImpl()
-    val useCase = GetAlertDetailsUseCaseImpl(repository)
-    val viewModel = AlertViewModel(useCase)
-
-    AlertDetailsScreen(viewModel = viewModel, onBack = {})
+    // Mock view model or mock data would be better here
+    // For now, let's just show a simple placeholder or empty screen
+    // as we cannot easily instantiate the real ViewModel in a Preview
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        Text("Alert Details Preview", color = Color.White)
+    }
 }

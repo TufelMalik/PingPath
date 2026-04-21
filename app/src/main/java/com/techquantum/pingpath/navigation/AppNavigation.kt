@@ -1,20 +1,24 @@
 package com.techquantum.pingpath.navigation
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.techquantum.pingpath.modules.addalert.AddAlertScreen
-import com.techquantum.pingpath.modules.addalert.AlertRepositoryImpl
-import com.techquantum.pingpath.modules.addalert.AlertViewModel
-import com.techquantum.pingpath.modules.addalert.GetTimeOptionsUseCase
-import com.techquantum.pingpath.modules.addalert.SearchLocationsUseCase
 import com.techquantum.pingpath.modules.alertdetails.AlertDetailsScreen
-import com.techquantum.pingpath.modules.alertdetails.GetAlertDetailsUseCaseImpl
 import com.techquantum.pingpath.modules.home.HomeScreen
 
 /**
@@ -90,84 +94,159 @@ fun AppNavigation(navController: NavHostController = rememberNavController()) {
         Routes.PERMISSION
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = startDest
-    ) {
-        // ── Permission Gate ────────────────────────────────
-        composable(Routes.PERMISSION) {
-            com.techquantum.pingpath.modules.permission.ui.PermissionScreen(
-                onAllPermissionsGranted = {
-                    navController.navigate(Routes.ALERTS_LIST) {
-                        popUpTo(Routes.PERMISSION) { inclusive = true }
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
+    val bottomBarRoutes = listOf(Routes.ALERTS_LIST, "recent", "settings")
+    val shouldShowBottomBar = currentRoute in bottomBarRoutes
+
+    Scaffold(
+        bottomBar = {
+            if (shouldShowBottomBar) {
+                NavigationBar(
+                    containerColor = Color(0xFF131313),
+                    contentColor = Color(0xFF44DDC1)
+                ) {
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.ALERTS_LIST,
+                        onClick = { 
+                            if (currentRoute != Routes.ALERTS_LIST) {
+                                navController.navigate(Routes.ALERTS_LIST) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Alerts") },
+                        label = { Text("Alerts") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF44DDC1),
+                            selectedTextColor = Color(0xFF44DDC1),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == "recent",
+                        onClick = { 
+                            if (currentRoute != "recent") {
+                                navController.navigate("recent") {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        icon = { Icon(Icons.Default.History, contentDescription = "Recent") },
+                        label = { Text("Recent") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF44DDC1),
+                            selectedTextColor = Color(0xFF44DDC1),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == "settings",
+                        onClick = { 
+                            if (currentRoute != "settings") {
+                                navController.navigate("settings") {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF44DDC1),
+                            selectedTextColor = Color(0xFF44DDC1),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray,
+                            indicatorColor = Color(0xFF2A2A2A)
+                        )
+                    )
+                }
+            }
+        }
+    ) { paddingValues ->
+        NavHost(
+            navController = navController,
+            startDestination = startDest,
+            modifier = androidx.compose.ui.Modifier.padding(paddingValues)
+        ) {
+            // ── Permission Gate ────────────────────────────────
+            composable(Routes.PERMISSION) {
+                com.techquantum.pingpath.modules.permission.ui.PermissionScreen(
+                    onAllPermissionsGranted = {
+                        navController.navigate(Routes.ALERTS_LIST) {
+                            popUpTo(Routes.PERMISSION) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        // ── Map Screen (Main Entry) ─────────────────────────
-        composable(Routes.MAP) {
-            com.techquantum.pingpath.modules.home.MapScreen(
-                onFabClick = {
-                    navController.safeNavigate(Routes.ADD_ALERT)
-                },
-                onAlertsClick = {
-                    navController.safeNavigate(Routes.ALERTS_LIST)
-                }
-            )
-        }
+            // ── Map Screen (Main Entry) ─────────────────────────
+            composable(Routes.MAP) {
+                com.techquantum.pingpath.modules.home.MapScreen(
+                    onFabClick = {
+                        navController.safeNavigate(Routes.ADD_ALERT)
+                    },
+                    onAlertsClick = {
+                        navController.safeNavigate(Routes.ALERTS_LIST)
+                    }
+                )
+            }
 
-        // ── Alerts List ──────────────────────────────
-        composable(Routes.ALERTS_LIST) {
-            HomeScreen(
-                onAlertClick = { alertId ->
-                    navController.safeNavigate(Routes.alertDetail(alertId))
-                },
-                onAddClick = {
-                    navController.safeNavigate(Routes.ADD_ALERT)
-                }
-            )
-        }
+            // ── Alerts List ──────────────────────────────
+            composable(Routes.ALERTS_LIST) {
+                HomeScreen(
+                    onAlertClick = { alertId ->
+                        navController.safeNavigate(Routes.alertDetail(alertId))
+                    },
+                    onAddClick = {
+                        navController.safeNavigate(Routes.ADD_ALERT)
+                    }
+                )
+            }
 
-        // ── Add Alert (multi-step wizard) ───────────────────
-        composable(Routes.ADD_ALERT) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            // Manual DI – will be replaced with Hilt later
-            val repository = AlertRepositoryImpl(context)
-            val searchUseCase = SearchLocationsUseCase(repository)
-            val timeUseCase = GetTimeOptionsUseCase(repository)
-            val viewModel = AlertViewModel(searchUseCase, timeUseCase, repository)
+            // ── Recent Screen ──────────────────────────────
+            composable("recent") {
+                com.techquantum.pingpath.modules.recent.RecentScreen()
+            }
 
-            AddAlertScreen(
-                viewModel = viewModel,
-                onClose = {
-                    navController.safePopBackStack()
-                },
-                onSaved = {
-                    // Pop back to Alerts List after saving
-                    navController.safePopBackStack(Routes.ALERTS_LIST, inclusive = false)
-                }
-            )
-        }
+            // ── Settings Screen ──────────────────────────────
+            composable("settings") {
+                com.techquantum.pingpath.modules.settings.SettingsScreen()
+            }
 
-        // ── Alert Detail (Live tracking view) ───────────────
-        composable(
-            route = Routes.ALERT_DETAIL,
-            arguments = listOf(navArgument("alertId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val alertId = backStackEntry.arguments?.getString("alertId").orEmpty()
+            // ── Add Alert (multi-step wizard) ───────────────────
+            composable(Routes.ADD_ALERT) {
+                AddAlertScreen(
+                    onClose = {
+                        navController.safePopBackStack()
+                    },
+                    onSaved = {
+                        navController.safePopBackStack(Routes.ALERTS_LIST, inclusive = false)
+                    }
+                )
+            }
 
-            // Manual DI – will be replaced with Hilt later
-            val repository = com.techquantum.pingpath.modules.alertdetails.AlertRepositoryImpl()
-            val useCase = GetAlertDetailsUseCaseImpl(repository)
-            val viewModel = com.techquantum.pingpath.modules.alertdetails.AlertViewModel(useCase)
-
-            AlertDetailsScreen(
-                viewModel = viewModel,
-                onBack = {
-                    navController.safePopBackStack()
-                }
-            )
+            // ── Alert Detail (Live tracking view) ───────────────
+            composable(
+                route = Routes.ALERT_DETAIL,
+                arguments = listOf(navArgument("alertId") { type = NavType.StringType })
+            ) {
+                AlertDetailsScreen(
+                    onBack = {
+                        navController.safePopBackStack()
+                    }
+                )
+            }
         }
     }
 }

@@ -5,7 +5,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -90,24 +90,28 @@ fun OsmMapView(
                 val destMarker = Marker(view).apply {
                     position = destination
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    title = "Destination"
+                    title = "Selected Location"
                 }
                 view.overlays.add(destMarker)
-            }
-
-            // Alert Zone Circle Overlay
-            if (destination != null && alertRadius != null) {
-                val polygon = Polygon(view).apply {
-                    points = Polygon.pointsAsCircle(destination, alertRadius)
-                    fillPaint.color = android.graphics.Color.argb(50, 0, 255, 0)
-                    outlinePaint.color = android.graphics.Color.GREEN
-                    outlinePaint.strokeWidth = 2f
+                
+                // Alert Zone Circle Overlay
+                if (alertRadius != null) {
+                    val polygon = Polygon(view).apply {
+                        points = Polygon.pointsAsCircle(destination, alertRadius)
+                        fillPaint.color = android.graphics.Color.argb(50, 68, 221, 193) // App Primary alpha
+                        outlinePaint.color = android.graphics.Color.argb(150, 68, 221, 193)
+                        outlinePaint.strokeWidth = 2f
+                    }
+                    view.overlays.add(polygon)
                 }
-                view.overlays.add(polygon)
-            }
-            
-            if (userLocation != null && destination == null) {
-                 view.controller.setCenter(userLocation)
+                
+                view.controller.animateTo(destination)
+            } else if (userLocation != null) {
+                view.controller.animateTo(userLocation)
+            } else {
+                // Default center to India if nothing specified
+                view.controller.setCenter(GeoPoint(20.5937, 78.9629))
+                view.controller.setZoom(5.0)
             }
 
             view.invalidate()

@@ -64,17 +64,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.techquantum.pingpath.model.data.LocationType
 
 @Composable
 fun AddAlertScreen(
-    viewModel: AlertViewModel,
+    viewModel: AlertViewModel = hiltViewModel(),
     onClose: () -> Unit = {},
     onSaved: () -> Unit = {}
 ) {
@@ -82,6 +83,9 @@ fun AddAlertScreen(
 
     Scaffold(
         containerColor = BackgroundDark,
+        topBar = {
+            AddAlertTopAppBar(onClose = onClose)
+        },
         bottomBar = {
             if (state.currentStep == 4) ReviewBottomBar(viewModel, onSaved = onSaved)
         }
@@ -91,7 +95,6 @@ fun AddAlertScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            AddAlertTopAppBar(onClose = onClose)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -288,7 +291,8 @@ fun Step1Destination(state: AlertUIState, viewModel: AlertViewModel) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(9.dp))) {
             com.techquantum.pingpath.modules.home.components.OsmMapView(
                 modifier = Modifier.fillMaxSize(),
-                userLocation = org.osmdroid.util.GeoPoint(19.0760, 72.8777), // Fallback center
+                userLocation = null, // TODO: Get actual user location
+                destination = state.selectedDestination?.let { org.osmdroid.util.GeoPoint(it.latitude, it.longitude) },
                 onMapClick = { geoPoint ->
                     viewModel.onEvent(AlertUIEvent.OnMapClicked(geoPoint.latitude, geoPoint.longitude, isDestination = true))
                 }
@@ -463,7 +467,8 @@ fun Step2AlarmLocation(state: AlertUIState, viewModel: AlertViewModel) {
                 Box(modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(9.dp))) {
                     com.techquantum.pingpath.modules.home.components.OsmMapView(
                         modifier = Modifier.fillMaxSize(),
-                        userLocation = org.osmdroid.util.GeoPoint(19.0760, 72.8777), // Fallback center
+                        userLocation = null, // TODO: Get actual user location
+                        destination = state.selectedAlarmLocation?.let { org.osmdroid.util.GeoPoint(it.latitude, it.longitude) },
                         onMapClick = { geoPoint ->
                             viewModel.onEvent(AlertUIEvent.OnMapClicked(geoPoint.latitude, geoPoint.longitude, isDestination = false))
                         }
@@ -1049,13 +1054,7 @@ fun SummaryTimelineItem(
 )
 @Composable
 fun AddAlertPreview() {
-    val context = LocalContext.current
-    val mockRepository = AlertRepositoryImpl(context)
-    val mockSearchUseCase = SearchLocationsUseCase(mockRepository)
-    val mockTimeUseCase = GetTimeOptionsUseCase(mockRepository)
-    val mockViewModel = AlertViewModel(mockSearchUseCase, mockTimeUseCase, mockRepository)
-
-    ProximAlertTheme {
-        AddAlertScreen(viewModel = mockViewModel, onClose = {}, onSaved = {})
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        Text("Add Alert Preview", color = Color.White)
     }
 }

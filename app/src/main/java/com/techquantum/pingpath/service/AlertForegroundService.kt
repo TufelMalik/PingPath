@@ -4,8 +4,6 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import com.techquantum.pingpath.model.constants.AppConstants
-import com.techquantum.pingpath.model.enums.AlertMode
 import com.techquantum.pingpath.model.interfaces.EtaRepository
 import com.techquantum.pingpath.model.interfaces.LocationRepository
 import com.techquantum.pingpath.utils.helpers.DistanceHelper
@@ -13,24 +11,20 @@ import com.techquantum.pingpath.utils.helpers.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
+import com.techquantum.pingpath.repository.AlertRepository
 
 @AndroidEntryPoint
 class AlertForegroundService : Service() {
 
     @Inject lateinit var locationRepository: LocationRepository
+    @Inject lateinit var alertRepository: AlertRepository
     @Inject lateinit var etaRepository: EtaRepository
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var isMonitoring = false
     private var lastEtaPollTime = 0L
-
-    // In a full implementation, these would come from DataStore
-    private var currentMode = AlertMode.PROXIMITY
-    private var threshold = 1000 // 1000 metres or minutes
-    private var destLat = 0.0
-    private var destLon = 0.0
-    private var destinationName = "Destination"
 
     override fun onCreate() {
         super.onCreate()
@@ -43,17 +37,9 @@ class AlertForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        // Parse alert details from intent
-        destLat = intent?.getDoubleExtra(EXTRA_DEST_LAT, 0.0) ?: 0.0
-        destLon = intent?.getDoubleExtra(EXTRA_DEST_LON, 0.0) ?: 0.0
-        destinationName = intent?.getStringExtra(EXTRA_DEST_NAME) ?: "Destination"
-        val modeStr = intent?.getStringExtra(EXTRA_MODE) ?: AlertMode.PROXIMITY.name
-        currentMode = AlertMode.valueOf(modeStr)
-        threshold = intent?.getIntExtra(EXTRA_THRESHOLD, 1000) ?: 1000
-
         startForeground(
             NotificationHelper.NOTIFICATION_ID_SERVICE,
-            NotificationHelper.buildServiceNotification(this, destinationName)
+            NotificationHelper.buildServiceNotification(this, "Monitoring active alerts...")
         )
 
         startLocationMonitoring()
@@ -66,45 +52,38 @@ class AlertForegroundService : Service() {
         isMonitoring = true
 
         serviceScope.launch {
+            // Combine location updates with active alerts from DB
             locationRepository.getUserLocation().collectLatest { location ->
-                Log.d("AlertService", "Location update: ${location.latitude}, ${location.longitude}")
+                val activeAlerts = alertRepository.getActiveAlerts().first()
                 
-                if (currentMode == AlertMode.PROXIMITY) {
+                activeAlerts.forEach { alert ->
                     val distance = DistanceHelper.calculateHaversineDistance(
                         location.latitude, location.longitude,
-                        destLat, destLon
+                        alert.alarmLat, alert.alarmLon
                     )
-                    Log.d("AlertService", "Distance remaining: $distance")
                     
-                    if (distance <= threshold) {
-                        triggerAlarm()
+                    Log.d("AlertService", "Alert ${alert.id} - Distance remaining: $distance")
+                    
+                    // Threshold is 1km for now, or use a field from alert if added
+                    if (distance <= 1000) { 
+                        triggerAlarm(alert.id, alert.destinationName)
                     }
-                } else {
-                    // ETA mode: poll every 30s
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastEtaPollTime >= AppConstants.OSRM_POLL_INTERVAL_SECONDS * 1000) {
-                        lastEtaPollTime = currentTime
-                        
-                        val etaResult = etaRepository.getEta(
-                            location.latitude, location.longitude,
-                            destLat, destLon
-                        )
-                        
-                        etaResult?.let {
-                            Log.d("AlertService", "ETA remaining: ${it.durationSeconds}s")
-                            if (it.durationSeconds <= threshold * 60) {
-                                triggerAlarm()
-                            }
-                        }
-                    }
+                }
+                
+                // If no more active alerts, stop service
+                if (activeAlerts.isEmpty()) {
+                    stopMonitoring()
                 }
             }
         }
     }
 
-    private fun triggerAlarm() {
+    private fun triggerAlarm(alertId: String, destinationName: String) {
         NotificationHelper.fireAlarm(this, destinationName)
-        stopMonitoring() // Once fired, stop monitoring.
+        
+        serviceScope.launch {
+            alertRepository.updateAlertStatus(alertId, "FIRED")
+        }
     }
 
     private fun stopMonitoring() {
@@ -124,11 +103,5 @@ class AlertForegroundService : Service() {
     companion object {
         const val ACTION_START = "com.techquantum.pingpath.START_ALERT"
         const val ACTION_STOP = "com.techquantum.pingpath.STOP_ALERT"
-
-        const val EXTRA_DEST_LAT = "extra_dest_lat"
-        const val EXTRA_DEST_LON = "extra_dest_lon"
-        const val EXTRA_DEST_NAME = "extra_dest_name"
-        const val EXTRA_MODE = "extra_mode"
-        const val EXTRA_THRESHOLD = "extra_threshold"
     }
 }

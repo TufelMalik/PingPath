@@ -29,4 +29,9 @@ abstract class RepositoryModule {
     abstract fun bindLocationRepository(
         locationRepositoryImpl: LocationRepositoryImpl
     ): LocationRepository
+
+    @Binds
+    abstract fun bindAlertRepository(
+        alertRepositoryImpl: com.techquantum.pingpath.repository.AlertRepositoryImpl
+    ): com.techquantum.pingpath.repository.AlertRepository
 }
